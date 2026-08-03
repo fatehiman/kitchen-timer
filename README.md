@@ -200,7 +200,7 @@ The two hour keys sit next to each other, and so do the two minute keys.
 
 | # | Label | In **normal** mode | In **timer set** mode | In **time set** mode |
 |---|---|---|---|---|
-| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 3 s** → clear the countdown to `00.00` | short → time set mode; **hold 3 s** → cancel | short → back to normal; **hold 3 s** → cancel |
+| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 2 s** → clear the countdown to `00.00` | short → time set mode; **hold 2 s** → cancel | short → back to normal; **hold 2 s** → cancel |
 | S2 | `h+ / 2:00` | start timer at **2:00** | hours +1 (0…99, wraps to 0) | hours +1 (0…23, wraps to 0) |
 | S3 | `h- / 1:00` | start timer at **1:00** | hours −1 (wraps 0 → 99) | hours −1 (wraps 0 → 23) |
 | S4 | `m+ / 0:30` | start timer at **0:30** | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) |
@@ -209,15 +209,15 @@ The two hour keys sit next to each other, and so do the two minute keys.
 | S7 | `0:07` | start timer at **0:07** | *(no effect)* | *(no effect)* |
 | S8 | `0:03` | start timer at **0:03** | *(no effect)* | *(no effect)* |
 
-**Holding any of S2…S8 for 3 s in normal mode reprograms that key's preset** — see
+**Holding any of S2…S8 for 2 s in normal mode reprograms that key's preset** — see
 §3b below.
 
 - The four `+/-` keys **auto-repeat** when held (after 600 ms, then ~8 steps/second),
-  so setting 99 hours doesn't need 99 presses. Holding past 3 s keeps repeating.
+  so setting 99 hours doesn't need 99 presses. Holding past 2 s keeps repeating.
 - All keys are debounced (25 ms).
 - Every keypress makes a **30 ms click** on the buzzer (3200 Hz, a bit higher than the
   alarm's 2400 Hz) — see §3c.
-- In normal mode a preset fires **on key release**, not on press, so that a 3 s hold
+- In normal mode a preset fires **on key release**, not on press, so that a 2 s hold
   can mean "reprogram" without first launching the old preset. The delay is
   imperceptible in normal use.
 - **While the alarm is ringing, any key silences it** and resets the timer to `00.00`.
@@ -229,15 +229,15 @@ The hold is staged, so one key covers both jobs:
 | hold time | action |
 |---|---|
 | ~1 s | pause / resume the running countdown |
-| ~3 s | **clear the countdown to `00.00`** and stop it |
+| ~2 s | **clear the countdown to `00.00`** and stop it |
 
 Keep holding through both stages to wipe the timer — it pauses on the way past 1 s
-and is then cleared at 3 s, so the end result is simply `00.00`. Release before 1 s
+and is then cleared at 2 s, so the end result is simply `00.00`. Release before 1 s
 for the normal short press (enter *timer set* mode).
 
 ### Cancelling a set mode
 
-**Hold `SET` for 3 s** while in *timer set* or *time set* mode to abandon the edit:
+**Hold `SET` for 2 s** while in *timer set* or *time set* mode to abandon the edit:
 nothing is written to the RTC or to EEPROM, and you drop straight back to normal
 mode. A countdown that was running when you entered the set mode resumes exactly
 where it was.
@@ -250,13 +250,13 @@ next mode.
 Any of the seven preset keys can be given a new duration, and it survives a power
 cycle.
 
-1. In normal mode, **hold the key for 3 s**. The right 4 digits start blinking with
+1. In normal mode, **hold the key for 2 s**. The right 4 digits start blinking with
    that key's current preset, and the LED above the key lights up so you know which
    one you are editing.
 2. Set the new value with `h+` `h-` `m+` `m-` (S2…S5).
 3. Press **`SET`** to save. The new value is written to EEPROM and you return to
    normal mode.
-   Or **hold `SET` 3 s** to cancel and keep the old value.
+   Or **hold `SET` 2 s** to cancel and keep the old value.
 
 Notes:
 
@@ -300,8 +300,8 @@ This also makes S6 exactly "10 min and 59 sec" as originally specified.
 Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
 `CLICK_HZ` = 3200 Hz. Details worth knowing:
 
-- It is triggered **on key-down only**, right after debounce. Holding a key for 3 s
-  still makes a single 30 ms sound, not a 3 s tone — the chirp is one-shot and
+- It is triggered **on key-down only**, right after debounce. Holding a key for 2 s
+  still makes a single 30 ms sound, not a 2 s tone — the chirp is one-shot and
   non-blocking (`updateClick()` ends it from `loop()`, like everything else here).
 - **Auto-repeat does not click.** Holding `h+` steps ~8×/second, which would turn
   into a machine-gun beep.
@@ -332,7 +332,7 @@ Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
 - In normal mode nothing blinks except the clock's seconds dot.
 - *Timer set* mode is also where preset reprogramming happens (§3b); the LED pattern
   tells the two apart.
-- Holding `SET` for 3 s leaves any set mode **without** saving.
+- Holding `SET` for 2 s leaves any set mode **without** saving.
 
 ---
 
@@ -393,7 +393,7 @@ At the top of the sketch:
 | `CLICK_HZ` | `3200` | key-down click pitch (passive buzzer only) |
 | `BLINK_MS` | `500` | digit blink half-period |
 | `HOLD_MS` | `1000` | `SET` hold in normal mode = pause/resume |
-| `HOLD_LONG_MS` | `3000` | hold to reprogram a key / cancel a set mode |
+| `HOLD_LONG_MS` | `2000` | hold to reprogram a key / cancel a set mode |
 | `PRESET_DEFAULT` | `120,60,30,15,10,7,3` | factory presets in minutes for S2…S8 |
 | `REPEAT_DELAY_MS` / `REPEAT_RATE_MS` | `600` / `130` | key auto-repeat |
 | `DISPLAY_BRIGHTNESS` | `PULSE10_16` | brightness, `PULSE1_16` (dim) … `PULSE14_16` |

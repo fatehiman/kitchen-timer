@@ -49,7 +49,7 @@ const unsigned long BEEP_MS         = 500;     // 500 ms on / 500 ms off
 const unsigned long BLINK_MS        = 500;     // blink half-period
 const unsigned long DEBOUNCE_MS     = 25;
 const unsigned long HOLD_MS         = 1000;    // SET hold in normal mode = pause
-const unsigned long HOLD_LONG_MS    = 3000;    // program a key / cancel a set mode
+const unsigned long HOLD_LONG_MS    = 2000;    // program a key / cancel a set mode
 const unsigned long REPEAT_DELAY_MS = 600;     // key auto-repeat kick-in
 const unsigned long REPEAT_RATE_MS  = 130;     // key auto-repeat rate
 const unsigned long RTC_POLL_MS     = 200;
@@ -60,7 +60,7 @@ const pulse_t DISPLAY_BRIGHTNESS = PULSE10_16; // PULSE1_16 (dim) .. PULSE14_16 
 
 // ------------------------------------------------------------------ buttons
 enum {
-  BTN_SET     = 0,  // S1  SET       - cycle modes / hold 1s = pause / hold 3s = cancel
+  BTN_SET     = 0,  // S1  SET       - cycle modes / hold 1s = pause / hold 2s = cancel
   BTN_H_PLUS  = 1,  // S2  h+  2:00
   BTN_H_MINUS = 2,  // S3  h-  1:00
   BTN_M_PLUS  = 3,  // S4  m+  0:30
@@ -73,7 +73,7 @@ const byte BTN_ADJUST_FIRST = BTN_H_PLUS;    // S2..S5 are the four +/- keys
 const byte BTN_ADJUST_LAST  = BTN_M_MINUS;
 
 // Preset, in minutes, that each button loads in normal mode (index 0 = SET, unused).
-// Live values, loaded from EEPROM at boot and re-programmable by holding a key 3 s.
+// Live values, loaded from EEPROM at boot and re-programmable by holding a key 2 s.
 const unsigned int PRESET_DEFAULT[8] = { 0, 120, 60, 30, 15, 10, 7, 3 };
 unsigned int presetMin[8];
 
@@ -315,7 +315,7 @@ void buzzerSet(bool on, unsigned int hz) {
 }
 
 // One tiny chirp on key-down. Non-blocking: updateClick() ends it CLICK_MS later,
-// so holding a key for 3 s still only makes a 30 ms sound.
+// so holding a key for 2 s still only makes a 30 ms sound.
 void clickBeep() {
   if (CLICK_MS == 0) return;
   if (alarmActive) return;               // that press is there to silence the alarm
@@ -490,7 +490,7 @@ void enterMode(Mode next) {
   mode = next;
 }
 
-// hold a preset key for 3 s in normal mode -> edit that key's stored preset
+// hold a preset key for 2 s in normal mode -> edit that key's stored preset
 void enterProgramMode(byte btn) {
   wasRunning   = timerRunning;
   timerRunning = false;
@@ -500,7 +500,7 @@ void enterProgramMode(byte btn) {
   mode         = MODE_SET_TIMER;
 }
 
-// hold SET for 3 s inside a set mode -> discard the edit, straight back to normal
+// hold SET for 2 s inside a set mode -> discard the edit, straight back to normal
 void cancelSetMode() {
   if (mode == MODE_SET_TIMER) {
     programKey   = 0xFF;
@@ -582,7 +582,7 @@ void onButtonPress(byte btn) {
 
   if (btn == BTN_SET) { setHoldStage = 0; return; }  // SET acts on release or on hold
 
-  // In normal mode the preset waits for the release, so that a 3 s hold can mean
+  // In normal mode the preset waits for the release, so that a 2 s hold can mean
   // "reprogram this key" without first firing the old preset.
   if (mode == MODE_NORMAL) return;
 
@@ -651,7 +651,7 @@ void updateButtons() {
 
     if (i == BTN_SET) {                                // SET never auto-repeats
       if (mode == MODE_NORMAL) {
-        // keep holding past the pause to wipe the countdown: 1 s pause, 3 s clear
+        // keep holding past the pause to wipe the countdown: 1 s pause, 2 s clear
         if (setHoldStage < 1 && held >= HOLD_MS) {
           setHoldStage   = 1;
           longHandled[i] = true;
@@ -665,13 +665,13 @@ void updateButtons() {
           timerStopAndClear();
         }
       } else if (!longHandled[i] && held >= HOLD_LONG_MS) {
-        longHandled[i] = true;                         // 3 s -> cancel the set mode
+        longHandled[i] = true;                         // 2 s -> cancel the set mode
         onButtonHold(i);
       }
       continue;
     }
 
-    if (mode == MODE_NORMAL) {                         // 3 s -> reprogram this key
+    if (mode == MODE_NORMAL) {                         // 2 s -> reprogram this key
       if (!longHandled[i] && held >= HOLD_LONG_MS) {
         longHandled[i] = true;
         onButtonHold(i);
