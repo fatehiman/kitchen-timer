@@ -66,7 +66,7 @@ Matches `TM1638 module(8, 9, 10);` — the library's argument order is
 | VCC (3-pin active modules only) | 5V |
 
 - **Passive buzzer / piezo** → leave `#define BUZZER_USE_TONE 1`; the sketch drives
-  it with `tone()` at 2400 Hz.
+  it with `tone()` — 2400 Hz for the alarm, 3200 Hz for the 30 ms key click.
 - **Active buzzer module** (produces its own tone from DC) → set
   `#define BUZZER_USE_TONE 0`; the sketch then just switches D5 high/low.
 - A loud buzzer can draw more than the 20 mA an I/O pin should source. For those,
@@ -105,8 +105,8 @@ pin works.
 4. Open [kitchen-timer-app/kitchen-timer-app.ino](kitchen-timer-app/kitchen-timer-app.ino)
    and upload.
 
-Verified build for `arduino:avr:leonardo`: **11 978 bytes flash (41 %)**,
-**727 bytes RAM (28 %)**.
+Verified build for `arduino:avr:leonardo`: **13 508 bytes flash (47 %)**,
+**793 bytes RAM (30 %)**.
 
 The whole sketch is non-blocking (`millis()`-based, no `delay()`), so buttons stay
 responsive while the timer runs and the alarm sounds.
@@ -215,6 +215,8 @@ The two hour keys sit next to each other, and so do the two minute keys.
 - The four `+/-` keys **auto-repeat** when held (after 600 ms, then ~8 steps/second),
   so setting 99 hours doesn't need 99 presses. Holding past 3 s keeps repeating.
 - All keys are debounced (25 ms).
+- Every keypress makes a **30 ms click** on the buzzer (3200 Hz, a bit higher than the
+  alarm's 2400 Hz) — see §3c.
 - In normal mode a preset fires **on key release**, not on press, so that a 3 s hold
   can mean "reprogram" without first launching the old preset. The delay is
   imperceptible in normal use.
@@ -293,6 +295,24 @@ display would sit on `00.00` for a silent final minute.
 
 This also makes S6 exactly "10 min and 59 sec" as originally specified.
 
+## 3c. Key click
+
+Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
+`CLICK_HZ` = 3200 Hz. Details worth knowing:
+
+- It is triggered **on key-down only**, right after debounce. Holding a key for 3 s
+  still makes a single 30 ms sound, not a 3 s tone — the chirp is one-shot and
+  non-blocking (`updateClick()` ends it from `loop()`, like everything else here).
+- **Auto-repeat does not click.** Holding `h+` steps ~8×/second, which would turn
+  into a machine-gun beep.
+- The pitch is deliberately **higher than the alarm** (3200 vs 2400 Hz) so the two are
+  never confused. On an **active** buzzer (`BUZZER_USE_TONE 0`) pitch isn't ours to
+  pick, so the click is just a 30 ms blip of whatever tone the module makes.
+- **While the alarm is ringing, keys do not click.** That press exists to silence the
+  buzzer; chirping at the same moment would be noise. If the alarm happens to start
+  *during* a click, the alarm takes the buzzer over immediately.
+- Set `CLICK_MS` to `0` to turn the click off completely.
+
 ---
 
 ## 4. Modes
@@ -368,7 +388,9 @@ At the top of the sketch:
 |---|---|---|
 | `TIMER_LEAD_SEC` | `59` | extra seconds added to every preset / set value |
 | `ALARM_LEN_MS` | `60000` | how long the alarm rings |
-| `BEEP_MS` | `500` | buzzer on/off period |
+| `BEEP_MS` | `500` | alarm buzzer on/off period |
+| `CLICK_MS` | `30` | key-down click length, `0` = no click |
+| `CLICK_HZ` | `3200` | key-down click pitch (passive buzzer only) |
 | `BLINK_MS` | `500` | digit blink half-period |
 | `HOLD_MS` | `1000` | `SET` hold in normal mode = pause/resume |
 | `HOLD_LONG_MS` | `3000` | hold to reprogram a key / cancel a set mode |

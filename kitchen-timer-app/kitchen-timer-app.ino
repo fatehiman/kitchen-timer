@@ -28,6 +28,11 @@ const byte PIN_BUZZER = 5;   // buzzer (+) or transistor base resistor
 #define BUZZER_USE_TONE 1
 const unsigned int BUZZER_HZ = 2400;
 
+// Key-down click: a short chirp, deliberately a different pitch from the alarm.
+// Set CLICK_MS to 0 to disable the click entirely.
+const unsigned int  CLICK_HZ = 3200;
+const unsigned long CLICK_MS = 30;
+
 const byte DS3231_ADDR = 0x68;
 
 // Set to 0 to drop all serial debug output (saves ~2 kB of flash).
@@ -110,6 +115,11 @@ byte programKey  = 0xFF;       // in timer-set mode: which key's preset is being
 bool alarmActive = false;
 unsigned long alarmStart = 0;
 bool buzzerOn = false;
+unsigned int buzzerHz = 0;      // pitch currently being driven
+
+// key click
+bool clickActive = false;
+unsigned long clickStart = 0;
 
 // button tracking
 byte btnRaw = 0, btnStable = 0;
@@ -289,15 +299,37 @@ void rtcWriteTime(byte h, byte m, byte s) {
 }
 
 // ================================================================== buzzer
-void buzzerSet(bool on) {
-  if (on == buzzerOn) return;
+// hz is ignored for an active buzzer; no default argument, the Arduino
+// prototype generator does not get along with those.
+void buzzerSet(bool on, unsigned int hz) {
+  if (on == buzzerOn && (!on || hz == buzzerHz)) return;
   buzzerOn = on;
+  buzzerHz = hz;
 #if BUZZER_USE_TONE
-  if (on) tone(PIN_BUZZER, BUZZER_HZ);
+  if (on) tone(PIN_BUZZER, hz);
   else    noTone(PIN_BUZZER);
 #else
+  (void)hz;                              // active buzzer: pitch is its own business
   digitalWrite(PIN_BUZZER, on ? HIGH : LOW);
 #endif
+}
+
+// One tiny chirp on key-down. Non-blocking: updateClick() ends it CLICK_MS later,
+// so holding a key for 3 s still only makes a 30 ms sound.
+void clickBeep() {
+  if (CLICK_MS == 0) return;
+  if (alarmActive) return;               // that press is there to silence the alarm
+  clickActive = true;
+  clickStart  = millis();
+  buzzerSet(true, CLICK_HZ);
+}
+
+void updateClick() {
+  if (!clickActive) return;
+  if (alarmActive) { clickActive = false; return; }   // alarm took the buzzer over
+  if (millis() - clickStart < CLICK_MS) return;
+  clickActive = false;
+  buzzerSet(false, CLICK_HZ);
 }
 
 // ================================================================== timer
@@ -322,7 +354,8 @@ void alarmBegin() {
 
 void alarmStop() {
   alarmActive = false;
-  buzzerSet(false);
+  clickActive = false;
+  buzzerSet(false, BUZZER_HZ);
   timerStopAndClear();
   // always land back in normal mode; go through enterMode() when leaving the
   // clock editor so the edited time still gets written to the DS3231
@@ -413,7 +446,7 @@ void updateAlarm() {
   if (!alarmActive) return;
   unsigned long el = millis() - alarmStart;
   if (el >= ALARM_LEN_MS) { alarmStop(); return; }
-  buzzerSet(((el / BEEP_MS) % 2) == 0);
+  buzzerSet(((el / BEEP_MS) % 2) == 0, BUZZER_HZ);
 }
 
 // ================================================================== actions
@@ -604,6 +637,7 @@ void updateButtons() {
         holdStart[i]    = now;
         nextRepeat[i]   = now + REPEAT_DELAY_MS;
         longHandled[i]  = false;
+        clickBeep();                                   // one chirp per key-down only
         onButtonPress(i);
       } else if (!longHandled[i]) {
         onButtonRelease(i);
@@ -727,6 +761,7 @@ void loop() {
   updateClock();
   updateTimer();
   updateAlarm();
+  updateClick();
 
   unsigned long now = millis();
   if (now - lastRender >= RENDER_MS) {
