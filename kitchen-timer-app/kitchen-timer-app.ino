@@ -117,6 +117,7 @@ unsigned long btnChangeAt = 0;
 unsigned long holdStart[8];
 unsigned long nextRepeat[8];
 bool longHandled[8];           // this hold already did its job; ignore the release
+byte setHoldStage = 0;         // SET held in normal mode: 1 = paused, 2 = timer cleared
 
 // display cache: raw segment byte per digit, so only changed digits are re-sent.
 // Index 0 = LEFT-most digit (the library's own numbering is reversed).
@@ -538,9 +539,15 @@ void applyPreset(byte btn) {
 // key pushed down
 void onButtonPress(byte btn) {
   // while the alarm rings, any key just silences and resets it
-  if (alarmActive) { dbgKey(btn, "alarm off"); alarmStop(); longHandled[btn] = true; return; }
+  if (alarmActive) {
+    dbgKey(btn, "alarm off");
+    alarmStop();
+    longHandled[btn] = true;
+    if (btn == BTN_SET) setHoldStage = 2;            // don't also act on this hold
+    return;
+  }
 
-  if (btn == BTN_SET) return;                        // SET acts on release or on hold
+  if (btn == BTN_SET) { setHoldStage = 0; return; }  // SET acts on release or on hold
 
   // In normal mode the preset waits for the release, so that a 3 s hold can mean
   // "reprogram this key" without first firing the old preset.
@@ -608,16 +615,23 @@ void updateButtons() {
     if (!(btnStable & (1 << i))) continue;
     unsigned long held = now - holdStart[i];
 
-    if (i == BTN_SET) {
-      if (longHandled[i]) continue;                    // SET never auto-repeats
+    if (i == BTN_SET) {                                // SET never auto-repeats
       if (mode == MODE_NORMAL) {
-        if (held >= HOLD_MS) {                         // 1 s -> pause / resume
+        // keep holding past the pause to wipe the countdown: 1 s pause, 3 s clear
+        if (setHoldStage < 1 && held >= HOLD_MS) {
+          setHoldStage   = 1;
           longHandled[i] = true;
           dbgKey(i, timerRunning ? "pause" : "resume");
           onSetLong();
         }
-      } else if (held >= HOLD_LONG_MS) {               // 3 s -> cancel the set mode
-        longHandled[i] = true;
+        if (setHoldStage < 2 && held >= HOLD_LONG_MS) {
+          setHoldStage   = 2;
+          longHandled[i] = true;
+          dbgKey(i, "clear timer");
+          timerStopAndClear();
+        }
+      } else if (!longHandled[i] && held >= HOLD_LONG_MS) {
+        longHandled[i] = true;                         // 3 s -> cancel the set mode
         onButtonHold(i);
       }
       continue;

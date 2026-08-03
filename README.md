@@ -200,7 +200,7 @@ The two hour keys sit next to each other, and so do the two minute keys.
 
 | # | Label | In **normal** mode | In **timer set** mode | In **time set** mode |
 |---|---|---|---|---|
-| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume a running timer | short → time set mode; **hold 3 s** → cancel | short → back to normal; **hold 3 s** → cancel |
+| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 3 s** → clear the countdown to `00.00` | short → time set mode; **hold 3 s** → cancel | short → back to normal; **hold 3 s** → cancel |
 | S2 | `h+ / 2:00` | start timer at **2:00** | hours +1 (0…99, wraps to 0) | hours +1 (0…23, wraps to 0) |
 | S3 | `h- / 1:00` | start timer at **1:00** | hours −1 (wraps 0 → 99) | hours −1 (wraps 0 → 23) |
 | S4 | `m+ / 0:30` | start timer at **0:30** | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) |
@@ -219,6 +219,19 @@ The two hour keys sit next to each other, and so do the two minute keys.
   can mean "reprogram" without first launching the old preset. The delay is
   imperceptible in normal use.
 - **While the alarm is ringing, any key silences it** and resets the timer to `00.00`.
+
+### Holding `SET` in normal mode
+
+The hold is staged, so one key covers both jobs:
+
+| hold time | action |
+|---|---|
+| ~1 s | pause / resume the running countdown |
+| ~3 s | **clear the countdown to `00.00`** and stop it |
+
+Keep holding through both stages to wipe the timer — it pauses on the way past 1 s
+and is then cleared at 3 s, so the end result is simply `00.00`. Release before 1 s
+for the normal short press (enter *timer set* mode).
 
 ### Cancelling a set mode
 
