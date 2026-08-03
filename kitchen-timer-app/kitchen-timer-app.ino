@@ -52,6 +52,7 @@ const unsigned long HOLD_MS         = 1000;    // SET hold in normal mode = paus
 const unsigned long HOLD_LONG_MS    = 2000;    // program a key / cancel a set mode
 const unsigned long REPEAT_DELAY_MS = 600;     // key auto-repeat kick-in
 const unsigned long REPEAT_RATE_MS  = 130;     // key auto-repeat rate
+const unsigned long SET_IDLE_MS     = 60000UL;  // no key for 1 min in a set mode -> cancel
 const unsigned long RTC_POLL_MS     = 200;
 const unsigned long RENDER_MS       = 40;
 const unsigned long TIMER_MAX_SEC   = 99UL * 3600UL + 59UL * 60UL + 59UL;
@@ -102,12 +103,14 @@ bool rtcOk = false;
 unsigned long lastRtcPoll = 0;
 unsigned long swTickRef   = 0;   // software clock fallback reference
 byte editClkH = 0, editClkM = 0;
+byte origClkH = 0, origClkM = 0;   // value the editor started from, frozen while editing
 
 // countdown timer
 unsigned long remainSec = 0;
 bool timerRunning       = false;
 unsigned long tickRef   = 0;
 byte editTimH = 0, editTimM = 0;
+byte origTimH = 0, origTimM = 0;   // ditto, so an untouched editor can be a no-op
 bool wasRunning  = false;      // run state to restore if a set mode is cancelled
 byte programKey  = 0xFF;       // in timer-set mode: which key's preset is being edited
 
@@ -128,6 +131,7 @@ unsigned long holdStart[8];
 unsigned long nextRepeat[8];
 bool longHandled[8];           // this hold already did its job; ignore the release
 byte setHoldStage = 0;         // SET held in normal mode: 1 = paused, 2 = timer cleared
+unsigned long setActivityAt = 0;   // last key activity, for the set-mode idle timeout
 
 // display cache: raw segment byte per digit, so only changed digits are re-sent.
 // Index 0 = LEFT-most digit (the library's own numbering is reversed).
@@ -453,11 +457,16 @@ void updateAlarm() {
 void enterMode(Mode next) {
   // ---- leaving the current mode (this is where edits get committed)
   if (mode == MODE_SET_CLOCK && next != MODE_SET_CLOCK) {
-    if (rtcOk) {
-      rtcWriteTime(editClkH, editClkM, 0);
-    } else {
-      clkH = editClkH; clkM = editClkM; clkS = 0;
-      swTickRef = millis();
+    // Only write the RTC when the user actually turned the time. Otherwise merely
+    // walking through this mode would zero the seconds every time, so the clock
+    // would keep losing up to 59 s per visit.
+    if (editClkH != origClkH || editClkM != origClkM) {
+      if (rtcOk) {
+        rtcWriteTime(editClkH, editClkM, 0);
+      } else {
+        clkH = editClkH; clkM = editClkM; clkS = 0;
+        swTickRef = millis();
+      }
     }
   }
   if (mode == MODE_SET_TIMER && next != MODE_SET_TIMER) {
@@ -466,6 +475,11 @@ void enterMode(Mode next) {
       presetMin[programKey] = (unsigned int)editTimH * 60u + editTimM;
       presetSaveOne(programKey);
       programKey   = 0xFF;
+      timerRunning = wasRunning;
+      tickRef      = millis();
+    } else if (editTimH == origTimH && editTimM == origTimM) {
+      // untouched editor -> same no-op as a cancel: keep the seconds we still had
+      // and the run/pause state we came in with, instead of restarting at HH:MM:59
       timerRunning = wasRunning;
       tickRef      = millis();
     } else {
@@ -477,15 +491,16 @@ void enterMode(Mode next) {
 
   // ---- entering the new mode
   if (next == MODE_SET_CLOCK) {
-    editClkH = clkH;
-    editClkM = clkM;
+    editClkH = origClkH = clkH;      // both frozen from here on, however long the edit takes
+    editClkM = origClkM = clkM;
   }
   if (next == MODE_SET_TIMER) {
     wasRunning   = timerRunning;
     timerRunning = false;                              // frozen while editing
-    editTimH = (byte)(remainSec / 3600UL);
-    editTimM = (byte)((remainSec % 3600UL) / 60UL);
+    editTimH = origTimH = (byte)(remainSec / 3600UL);
+    editTimM = origTimM = (byte)((remainSec % 3600UL) / 60UL);
   }
+  if (next != MODE_NORMAL) setActivityAt = millis();    // start the idle timeout
 
   mode = next;
 }
@@ -495,8 +510,9 @@ void enterProgramMode(byte btn) {
   wasRunning   = timerRunning;
   timerRunning = false;
   programKey   = btn;
-  editTimH     = (byte)(presetMin[btn] / 60u);
-  editTimM     = (byte)(presetMin[btn] % 60u);
+  editTimH = origTimH = (byte)(presetMin[btn] / 60u);
+  editTimM = origTimM = (byte)(presetMin[btn] % 60u);
+  setActivityAt = millis();
   mode         = MODE_SET_TIMER;
 }
 
@@ -508,6 +524,17 @@ void cancelSetMode() {
     tickRef      = millis();
   }
   mode = MODE_NORMAL;                                  // clock edits simply dropped
+}
+
+// left in a set mode with no key touched for SET_IDLE_MS -> abandon the edit
+void updateSetTimeout() {
+  if (mode == MODE_NORMAL) return;
+  if (alarmActive) return;                             // the alarm owns the exit path
+  if (millis() - setActivityAt < SET_IDLE_MS) return;
+#if DEBUG_SERIAL
+  Serial.println(F("[K] idle timeout -> NORMAL"));
+#endif
+  cancelSetMode();
 }
 
 void onSetShort() {
@@ -625,6 +652,8 @@ void updateButtons() {
 
   byte raw = module.getButtons();
   if (raw != btnRaw) { btnRaw = raw; btnChangeAt = now; }
+
+  if (btnStable) setActivityAt = now;   // any key down or held counts as activity
 
   if (btnRaw != btnStable && (now - btnChangeAt) >= DEBOUNCE_MS) {
     byte changed = (byte)(btnStable ^ btnRaw);
@@ -758,6 +787,7 @@ void loop() {
   static unsigned long lastRender = 0;
 
   updateButtons();
+  updateSetTimeout();
   updateClock();
   updateTimer();
   updateAlarm();

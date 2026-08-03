@@ -105,8 +105,8 @@ pin works.
 4. Open [kitchen-timer-app/kitchen-timer-app.ino](kitchen-timer-app/kitchen-timer-app.ino)
    and upload.
 
-Verified build for `arduino:avr:leonardo`: **13 508 bytes flash (47 %)**,
-**793 bytes RAM (30 %)**.
+Verified build for `arduino:avr:leonardo`: **13 746 bytes flash (47 %)**,
+**801 bytes RAM (31 %)**.
 
 The whole sketch is non-blocking (`millis()`-based, no `delay()`), so buttons stay
 responsive while the timer runs and the alarm sounds.
@@ -200,7 +200,7 @@ The two hour keys sit next to each other, and so do the two minute keys.
 
 | # | Label | In **normal** mode | In **timer set** mode | In **time set** mode |
 |---|---|---|---|---|
-| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 2 s** → clear the countdown to `00.00` | short → time set mode; **hold 2 s** → cancel | short → back to normal; **hold 2 s** → cancel |
+| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 2 s** → clear the countdown to `00.00` | short → time set mode; **hold 2 s** → cancel | short → back to normal (writes the RTC only if you changed something); **hold 2 s** → cancel |
 | S2 | `h+ / 2:00` | start timer at **2:00** | hours +1 (0…99, wraps to 0) | hours +1 (0…23, wraps to 0) |
 | S3 | `h- / 1:00` | start timer at **1:00** | hours −1 (wraps 0 → 99) | hours −1 (wraps 0 → 23) |
 | S4 | `m+ / 0:30` | start timer at **0:30** | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) |
@@ -244,6 +244,28 @@ where it was.
 
 Compare with a **short** `SET` press, which *commits* the edit and moves on to the
 next mode.
+
+A set mode also **cancels itself after 1 minute** with no key pressed
+(`SET_IDLE_MS`), exactly as if you had held `SET` — so a half-finished edit can
+never sit there blinking for hours.
+
+### An untouched editor changes nothing
+
+Committing an edit you never made is a **no-op**, in both set modes:
+
+- *time set* — the RTC is only written when `HH` or `MM` actually differs from the
+  value the mode opened with. This matters: writing always sets the seconds to `00`,
+  so just stepping through *time set* to reach normal mode used to throw away up to
+  59 s of real time on every pass, and the clock drifted steadily behind.
+- *timer set* — an unchanged value keeps the countdown exactly as it was, including
+  its seconds and its run/pause state, instead of restarting it at `HH:MM:59`.
+- Programming a preset key writes the same value back, which the EEPROM helper
+  already skips.
+
+Both editors snapshot their starting value when you enter the mode, and neither the
+snapshot nor the displayed value follows the wall clock afterwards — sit in *time
+set* for three minutes and the display still shows the minute you walked in on, so
+"unchanged" always means what you'd expect.
 
 ## 3b. Reprogramming the preset keys (saved in EEPROM)
 
@@ -326,9 +348,12 @@ Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
 | **time set** | **blinks** | steady |
 
 - Entering **timer set** freezes the countdown. Leaving it (with `SET`) starts the
-  timer at the new value if it is greater than `00.00`, or clears it if it is `00.00`.
+  timer at the new value if it is greater than `00.00`, or clears it if it is `00.00`
+  — unless the value was never touched, in which case nothing happens at all.
 - Entering **time set** copies the current time into an edit buffer; leaving it
-  writes `HH:MM:00` to the DS3231 and clears the RTC's oscillator-stop flag.
+  writes `HH:MM:00` to the DS3231 and clears the RTC's oscillator-stop flag — again
+  only if the buffer was actually edited.
+- Either set mode is abandoned automatically after **1 minute of no keypresses**.
 - In normal mode nothing blinks except the clock's seconds dot.
 - *Timer set* mode is also where preset reprogramming happens (§3b); the LED pattern
   tells the two apart.
@@ -394,6 +419,7 @@ At the top of the sketch:
 | `BLINK_MS` | `500` | digit blink half-period |
 | `HOLD_MS` | `1000` | `SET` hold in normal mode = pause/resume |
 | `HOLD_LONG_MS` | `2000` | hold to reprogram a key / cancel a set mode |
+| `SET_IDLE_MS` | `60000` | no keypress for this long in a set mode = auto-cancel |
 | `PRESET_DEFAULT` | `120,60,30,15,10,7,3` | factory presets in minutes for S2…S8 |
 | `REPEAT_DELAY_MS` / `REPEAT_RATE_MS` | `600` / `130` | key auto-repeat |
 | `DISPLAY_BRIGHTNESS` | `PULSE10_16` | brightness, `PULSE1_16` (dim) … `PULSE14_16` |
