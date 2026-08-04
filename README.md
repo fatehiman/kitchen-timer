@@ -1,8 +1,12 @@
 # Kitchen Timer
 
 An 8-digit kitchen timer built on an **Arduino Leonardo**, a **TM1638** module
-(8× seven-segment digits + 8 LEDs + 8 buttons), a **DS3231** I²C real-time clock
-and a **buzzer**.
+(8× seven-segment digits + 8 LEDs + 8 buttons), a **DS3231** I²C real-time clock,
+a **TTP223 touch pad** and a **buzzer**.
+
+It does two jobs at once: a **countdown timer** (the classic kitchen timer) and
+three independent **time-of-day alarms** (`AL-1`…`AL-3`), each of which can be
+armed at an `HH:MM` and survives a power cycle.
 
 The display is split in two halves:
 
@@ -74,17 +78,36 @@ Matches `TM1638 module(8, 9, 10);` — the library's argument order is
   emitter → GND, buzzer between 5 V and collector, plus a 1N4148 across the buzzer
   if it is an electromagnetic type.
 
+### TTP223 touch pad
+
+| TTP223 pin | Leonardo pin |
+|---|---|
+| VCC | 5V |
+| GND | GND |
+| I/O (SIG) | **D4** |
+
+Default module configuration is what the sketch expects: **active HIGH, momentary**
+(output goes high while a finger is on the pad, low again on release) — that is the
+factory jumper state on every common TTP223 breakout, with neither `A` nor `B`
+bridged. The pin is read as plain `INPUT`; the module drives it push-pull, so no
+pull-up or pull-down is needed. If your board is set to *toggle* mode the sketch
+will see one tap per two touches — unbridge the toggle pad.
+
+The tap is debounced with the same 25 ms filter as the TM1638 keys, and only the
+touch (not the release) does anything.
+
 ### Pin summary
 
 | Leonardo pin | Used for |
 |---|---|
 | D2 (SDA) | DS3231 SDA |
 | D3 (SCL) | DS3231 SCL |
+| D4 | TTP223 touch pad |
 | D5 | Buzzer |
 | D8 | TM1638 DIO |
 | D9 | TM1638 CLK |
 | D10 | TM1638 STB |
-| 5V, GND | power for all three modules |
+| 5V, GND | power for all four modules |
 
 D0/D1 (Serial1), D13 (LED) and the USB pins stay free. If you need to move the
 TM1638 or buzzer, change the constants at the top of the sketch — any free digital
@@ -105,8 +128,8 @@ pin works.
 4. Open [kitchen-timer-app/kitchen-timer-app.ino](kitchen-timer-app/kitchen-timer-app.ino)
    and upload.
 
-Verified build for `arduino:avr:leonardo`: **13 746 bytes flash (47 %)**,
-**801 bytes RAM (31 %)**.
+Verified build for `arduino:avr:leonardo`: **15 824 bytes flash (55 %)**,
+**921 bytes RAM (35 %)**.
 
 The whole sketch is non-blocking (`millis()`-based, no `delay()`), so buttons stay
 responsive while the timer runs and the alarm sounds.
@@ -198,16 +221,17 @@ The TM1638's buttons are S1…S8, left to right.
 
 The two hour keys sit next to each other, and so do the two minute keys.
 
-| # | Label | In **normal** mode | In **timer set** mode | In **time set** mode |
-|---|---|---|---|---|
-| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 2 s** → clear the countdown to `00.00` | short → time set mode; **hold 2 s** → cancel | short → back to normal (writes the RTC only if you changed something); **hold 2 s** → cancel |
-| S2 | `h+ / 2:00` | start timer at **2:00** | hours +1 (0…99, wraps to 0) | hours +1 (0…23, wraps to 0) |
-| S3 | `h- / 1:00` | start timer at **1:00** | hours −1 (wraps 0 → 99) | hours −1 (wraps 0 → 23) |
-| S4 | `m+ / 0:30` | start timer at **0:30** | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) |
-| S5 | `m- / 0:15` | start timer at **0:15** | minutes −1 (wraps 0 → 59) | minutes −1 (wraps 0 → 59) |
-| S6 | `0:10` | start timer at **0:10** | *(no effect)* | *(no effect)* |
-| S7 | `0:07` | start timer at **0:07** | *(no effect)* | *(no effect)* |
-| S8 | `0:03` | start timer at **0:03** | *(no effect)* | *(no effect)* |
+| # | Label | In **normal** mode | In **timer set** mode | In **time set** mode | In an **alarm set** mode |
+|---|---|---|---|---|---|
+| S1 | `SET` | short → timer set mode; **hold 1 s** → pause/resume; **hold 2 s** → clear the countdown to `00.00` | short → time set mode; **hold 2 s** → cancel | short → alarm 1 set mode (writes the RTC only if you changed something); **hold 2 s** → cancel | short → next alarm, or back to normal after AL-3 (saves only if changed); **hold 2 s** → cancel |
+| S2 | `h+ / 2:00` | start timer at **2:00** | hours +1 (0…99, wraps to 0) | hours +1 (0…23, wraps to 0) | hours +1 (0…23, wraps) |
+| S3 | `h- / 1:00` | start timer at **1:00** | hours −1 (wraps 0 → 99) | hours −1 (wraps 0 → 23) | hours −1 (wraps 0 → 23) |
+| S4 | `m+ / 0:30` | start timer at **0:30** | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) | minutes +1 (0…59, wraps) |
+| S5 | `m- / 0:15` | start timer at **0:15** | minutes −1 (wraps 0 → 59) | minutes −1 (wraps 0 → 59) | minutes −1 (wraps 0 → 59) |
+| S6 | `0:10` | start timer at **0:10** | *(no effect)* | *(no effect)* | *(no effect)* |
+| S7 | `0:07` | start timer at **0:07** | *(no effect)* | *(no effect)* | *(no effect)* |
+| S8 | `0:03` | start timer at **0:03** | *(no effect)* | *(no effect)* | **arm / disarm** this alarm |
+| — | touch pad | next duration in the tap ring (§3d) | *(no effect)* | *(no effect)* | *(no effect)* |
 
 **Holding any of S2…S8 for 2 s in normal mode reprograms that key's preset** — see
 §3b below.
@@ -220,7 +244,9 @@ The two hour keys sit next to each other, and so do the two minute keys.
 - In normal mode a preset fires **on key release**, not on press, so that a 2 s hold
   can mean "reprogram" without first launching the old preset. The delay is
   imperceptible in normal use.
-- **While the alarm is ringing, any key silences it** and resets the timer to `00.00`.
+- **While anything is ringing, any key — or a touch — silences it.** A ringing
+  countdown also resets the timer to `00.00`; a ringing *time* alarm does not touch
+  a countdown that is still running underneath it.
 
 ### Holding `SET` in normal mode
 
@@ -237,10 +263,9 @@ for the normal short press (enter *timer set* mode).
 
 ### Cancelling a set mode
 
-**Hold `SET` for 2 s** while in *timer set* or *time set* mode to abandon the edit:
-nothing is written to the RTC or to EEPROM, and you drop straight back to normal
-mode. A countdown that was running when you entered the set mode resumes exactly
-where it was.
+**Hold `SET` for 2 s** while in any set mode to abandon the edit: nothing is written
+to the RTC or to EEPROM, and you drop straight back to normal mode. A countdown that
+was running when you entered the set mode resumes exactly where it was.
 
 Compare with a **short** `SET` press, which *commits* the edit and moves on to the
 next mode.
@@ -251,7 +276,7 @@ never sit there blinking for hours.
 
 ### An untouched editor changes nothing
 
-Committing an edit you never made is a **no-op**, in both set modes:
+Committing an edit you never made is a **no-op**, in every set mode:
 
 - *time set* — the RTC is only written when `HH` or `MM` actually differs from the
   value the mode opened with. This matters: writing always sets the seconds to `00`,
@@ -259,10 +284,12 @@ Committing an edit you never made is a **no-op**, in both set modes:
   59 s of real time on every pass, and the clock drifted steadily behind.
 - *timer set* — an unchanged value keeps the countdown exactly as it was, including
   its seconds and its run/pause state, instead of restarting it at `HH:MM:59`.
+- *alarm set* — an unchanged `HH:MM` and armed flag writes nothing to EEPROM, so
+  walking `SET` through all three alarms to get back to normal costs no write cycles.
 - Programming a preset key writes the same value back, which the EEPROM helper
   already skips.
 
-Both editors snapshot their starting value when you enter the mode, and neither the
+Each editor snapshots its starting value when you enter the mode, and neither the
 snapshot nor the displayed value follows the wall clock afterwards — sit in *time
 set* for three minutes and the display still shows the minute you walked in on, so
 "unchanged" always means what you'd expect.
@@ -294,6 +321,10 @@ Notes:
   burn EEPROM cycles.
 - To force all keys back to their factory values, change `EE_VERSION` in the sketch
   and re-upload.
+- The three time alarms live in a **separate** EEPROM block at addresses 16–26, with
+  its own magic (`0x41`) and version byte, so adding them did not disturb presets that
+  were already stored. Same self-healing validation, same `EE_AL_VERSION` bump to
+  reset them.
 
 ### The hidden 59 seconds
 
@@ -334,18 +365,45 @@ Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
   buzzer; chirping at the same moment would be noise. If the alarm happens to start
   *during* a click, the alarm takes the buzzer over immediately.
 - Set `CLICK_MS` to `0` to turn the click off completely.
+- The touch pad clicks exactly like a button.
+
+## 3d. The touch pad (D4) — one-finger presets
+
+The TTP223 is the fast path for the durations you actually use. Each tap loads the
+**next** value in a fixed ring and starts the countdown immediately:
+
+```
+3 → 5 → 7 → 10 → 15 → 30 → 45 → 1:00 → 1:30 → 2:00 → 2:30 → 3:00 → clear → (back to 3)
+```
+
+(minutes; the last four are `HH:MM`). So three taps in a row give you 7 minutes, and
+you can keep tapping past `3:00` to wipe the timer and start the ring over.
+
+- Every value carries the same hidden `+59 s` as a preset key (§3b), so a tap of `3`
+  is 3 whole minutes to the buzzer.
+- The ring is **not** sticky across other actions: pressing a preset key, editing in
+  *timer set*, clearing with a `SET` hold, or the alarm firing all reset the position,
+  so the next tap after any of those is always `3` again.
+- The pad is ignored inside the set modes.
+- **While anything is ringing, a tap silences it** and does nothing else — it will not
+  also start a new countdown.
 
 ---
 
 ## 4. Modes
 
-`SET` cycles: **normal → timer set → time set → normal**.
+`SET` cycles through five modes:
 
-| Mode | Left 4 digits (clock) | Right 4 digits (timer) |
-|---|---|---|
-| **normal** | steady, dot pulses each second | steady; dots blink 1 Hz while counting down |
-| **timer set** | steady, dot pulses | **blinks** (500 ms on / 500 ms off) |
-| **time set** | **blinks** | steady |
+**normal → timer set → time set → alarm 1 set → alarm 2 set → alarm 3 set → normal**
+
+| Mode | Left 4 digits (clock) | Right 4 digits | LED |
+|---|---|---|---|
+| **normal** | steady, dot pulses each second | countdown, steady; dots blink 1 Hz while running | 5 |
+| **timer set** | steady, dot pulses | **blinks** the countdown value | 5 |
+| **time set** | **blinks** | countdown, steady | 1 |
+| **alarm 1 set** | steady, dot pulses | **blinks** `HH.MM`, or `--.--` when disarmed | 6 |
+| **alarm 2 set** | steady, dot pulses | ditto | 7 |
+| **alarm 3 set** | steady, dot pulses | ditto | 8 |
 
 - Entering **timer set** freezes the countdown. Leaving it (with `SET`) starts the
   timer at the new value if it is greater than `00.00`, or clears it if it is `00.00`
@@ -353,11 +411,14 @@ Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
 - Entering **time set** copies the current time into an edit buffer; leaving it
   writes `HH:MM:00` to the DS3231 and clears the RTC's oscillator-stop flag — again
   only if the buffer was actually edited.
-- Either set mode is abandoned automatically after **1 minute of no keypresses**.
+- The three **alarm set** modes each edit one time-of-day alarm — see §5b.
+- Any set mode is abandoned automatically after **1 minute of no keypresses**.
 - In normal mode nothing blinks except the clock's seconds dot.
 - *Timer set* mode is also where preset reprogramming happens (§3b); the LED pattern
   tells the two apart.
 - Holding `SET` for 2 s leaves any set mode **without** saving.
+- The countdown keeps running through all of the set modes except *timer set*, which
+  freezes it for the duration of the edit.
 
 ---
 
@@ -369,31 +430,78 @@ Pressing any of the 8 buttons fires a **tiny chirp**: `CLICK_MS` = 30 ms at
 3. While running, the dot between the timer's `HH` and `MM` blinks once per second.
 4. The alarm fires **the moment the display changes from `00.01` to `00.00`**, so the
    full set duration has genuinely elapsed and there is no silent final minute:
-   - all **4 timer digits blink** (500 / 500 ms),
+   - the **4 timer digits blink** `00.00` (500 / 500 ms),
+   - **LED 5 blinks** — and only LED 5,
    - the buzzer beeps **500 ms on / 500 ms off**,
-   - both continue for **1 minute**.
+   - all of it continues for **1 minute**.
 5. After that minute the alarm stops on its own, the timer resets to `00.00` and
    stops blinking.
-   **Pressing any of the 8 buttons ends the alarm early** with the same result: buzzer
-   off, timer cleared to `00.00`, back in normal mode — and that press does nothing
-   else, so it cannot accidentally start a new countdown. If the alarm happened to go
-   off while you were in *time set* mode, the edited time is still saved to the RTC on
-   the way out.
+   **Pressing any of the 8 buttons, or tapping the pad, ends the alarm early** with the
+   same result: buzzer off, timer cleared to `00.00`, back in normal mode — and that
+   press does nothing else, so it cannot accidentally start a new countdown. If the
+   alarm happened to go off while you were in *time set* mode, the edited time is still
+   saved to the RTC on the way out.
 6. Maximum settable value is `99:59` (`99 h 59 m`).
+
+## 5b. Time-of-day alarms (AL-1 … AL-3)
+
+Three independent alarms, each an `HH:MM` in 24-hour time plus an armed flag, all
+stored in EEPROM.
+
+**Setting one.** Press `SET` past *timer set* and *time set* to reach *alarm 1 set*
+(LED 6 lights). The right 4 digits blink the alarm's time; use `h+ h- m+ m-` to change
+it. **`S8` arms / disarms** the alarm — a disarmed alarm shows a blinking `--.--` and
+never fires, but its `HH:MM` is remembered, so `S8` again brings it straight back.
+Touching any of the `+/-` keys arms the alarm for you. `SET` saves and moves on to
+alarm 2; holding `SET` for 2 s cancels everything and returns to normal.
+
+**Firing.** An armed alarm goes off the moment the clock enters its minute, at most
+once per day per alarm:
+
+- the right 4 digits blink **`AL-1`** / **`AL-2`** / **`AL-3`**,
+- the matching **LED 6 / 7 / 8 blinks**,
+- the buzzer beeps like the countdown alarm, for **1 minute**, and any key or a tap
+  silences it.
+
+Silencing a time alarm does **not** disarm it (it rings again tomorrow) and does not
+disturb a countdown that happens to be running.
+
+**Conflicts.** All four alarm sources are independent and can sound together:
+
+| Situation | Digits | LEDs |
+|---|---|---|
+| Countdown + a time alarm at the same moment | blinking `00.00` — the countdown wins the display | LED 5 **and** the time alarm's LED blink |
+| Two or three time alarms set to the same minute | the **lowest** label, e.g. `AL-1` | every matching LED blinks |
+
+So the digits always show the highest-priority event while the LEDs still tell you
+everything that is ringing. One key press silences all of them at once.
+
+An alarm set to the minute you are currently standing in waits until tomorrow rather
+than firing instantly, and the same guard runs at boot.
 
 ## 6. LED indicators
 
-The 8 LEDs above the digits echo the state, which is handy while debugging:
+The 8 LEDs above the digits echo the state. **LED 1 is the clock** — it lights while
+you are setting the time of day. The **right 4 are the four alarm channels** — LED 5 is
+the countdown, LEDs 6/7/8 are AL-1/2/3 — and they mean the same thing whether they are
+lit (this is what you are setting) or blinking (this is what is ringing).
 
 | State | LEDs |
 |---|---|
-| Alarm ringing | all 8 blink |
-| Time set mode | left 4 on |
-| Timer set mode | right 4 on |
+| Countdown alarm ringing | LED 5 blinks |
+| Time alarm ringing | LED 6 / 7 / 8 blinks (one per ringing alarm) |
+| Timer set mode | LED 5 on |
+| Alarm 1 / 2 / 3 set mode | LED 6 / 7 / 8 on |
+| Time set mode | LED 1 on |
 | Reprogramming a preset key | only the LED above that key |
-| Timer running | LED 8 on |
-| Timer paused (long-press `SET`) | LED 8 blinks |
-| Idle | all off |
+| Timer running | LED 5 on |
+| Timer paused (long-press `SET`) | LED 5 blinks |
+| An alarm is armed (normal mode) | LED 2 / 3 / 4 on for AL-1 / 2 / 3 |
+| Idle, nothing armed | all off |
+
+The armed-alarm indicators on the left are steady and stay lit while
+something is ringing, so they never get confused with the blinking channel LEDs on the
+right.
 
 ## 7. Robustness
 
@@ -421,6 +529,7 @@ At the top of the sketch:
 | `HOLD_LONG_MS` | `2000` | hold to reprogram a key / cancel a set mode |
 | `SET_IDLE_MS` | `60000` | no keypress for this long in a set mode = auto-cancel |
 | `PRESET_DEFAULT` | `120,60,30,15,10,7,3` | factory presets in minutes for S2…S8 |
+| `TOUCH_SEQ` | `3,5,7,10,15,30,45,60,90,120,150,180,0` | the touch-pad tap ring, in minutes; `0` = clear |
 | `REPEAT_DELAY_MS` / `REPEAT_RATE_MS` | `600` / `130` | key auto-repeat |
 | `DISPLAY_BRIGHTNESS` | `PULSE10_16` | brightness, `PULSE1_16` (dim) … `PULSE14_16` |
 | `BUZZER_USE_TONE` | `1` | 1 = passive buzzer via `tone()`, 0 = active buzzer |
