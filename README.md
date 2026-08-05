@@ -128,8 +128,8 @@ pin works.
 4. Open [kitchen-timer-app/kitchen-timer-app.ino](kitchen-timer-app/kitchen-timer-app.ino)
    and upload.
 
-Verified build for `arduino:avr:leonardo`: **15 880 bytes flash (55 %)**,
-**921 bytes RAM (35 %)**.
+Verified build for `arduino:avr:leonardo`: **16 054 bytes flash (55 %)**,
+**937 bytes RAM (36 %)**.
 
 The whole sketch is non-blocking (`millis()`-based, no `delay()`), so buttons stay
 responsive while the timer runs and the alarm sounds.
@@ -199,19 +199,47 @@ arduino-cli compile -u -p COM11 --fqbn arduino:avr:leonardo e:\www\kitchen-timer
 
 Uploading to a Leonardo is a two-step dance: the tool opens the sketch's port at
 **1200 baud** to reset the board, then flashes the *separate* COM port that the
-Caterina bootloader exposes for ~8 seconds. On this board that bootloader port
-never appears — after the 1200-baud touch the USB device goes silent for ~6 s and
-then comes straight back running the old sketch, so `avrdude` has nothing to open
-and fails with `cannot open port \\.\COM11`.
+Caterina bootloader exposes for ~8 seconds. `arduino-cli upload -p COM11` reliably
+fails here with `cannot open port \\.\COM11` — it keeps trying to flash the sketch
+port, which is gone by then.
 
-If you hit that, in order of likelihood:
+The bootloader **does** show up, just on another port and not instantly: on this
+machine it is **COM12, about 2.3 s after the reset**, and `avrdude` talks to it
+happily (`Programmer id = CATERIN`). So drive the two steps yourself — reset, wait
+for the new port to appear, flash that:
+
+```powershell
+# 1. build to a known folder
+arduino-cli compile --fqbn arduino:avr:leonardo --output-dir C:\temp\kt-build `
+  e:\www\kitchen-timer\kitchen-timer-app
+
+# 2. reset the board, catch the bootloader port, flash it
+$av   = "$env:LOCALAPPDATA\Arduino15\packages\arduino\tools\avrdude\8.0.0-arduino1\bin\avrdude.exe"
+$conf = "$env:LOCALAPPDATA\Arduino15\packages\arduino\tools\avrdude\8.0.0-arduino1\etc\avrdude.conf"
+$before = @([System.IO.Ports.SerialPort]::getportnames())
+$sp = New-Object System.IO.Ports.SerialPort 'COM11',1200,'None',8,'one'
+$sp.Open(); $sp.DtrEnable = $false; $sp.Close()     # the 1200-baud touch = reset
+$port = $null
+for ($i = 0; $i -lt 120 -and -not $port; $i++) {
+  $port = @([System.IO.Ports.SerialPort]::getportnames() |
+            Where-Object { $before -notcontains $_ })[0]
+  if (-not $port) { Start-Sleep -Milliseconds 100 }
+}
+& $av -C $conf -p atmega32u4 -c avr109 -P $port -b 57600 -D `
+      -U flash:w:C:\temp\kt-build\kitchen-timer-app.ino.hex:i
+```
+
+The poll loop is the important part: hard-coding COM12 races the ~2 s it takes to
+enumerate, and the window closes after ~8 s.
+
+If even that finds no new port, in order of likelihood:
 
 1. **Double-tap RESET** on the board and start the upload within the 8 s window.
 2. Reinstall the bootloader-port driver, or install the Arduino IDE's bundled
    drivers so `VID_2341 PID_0036` (*Arduino Leonardo bootloader*) gets a COM port.
-3. If no bootloader port ever shows up, the Caterina bootloader is missing or
-   damaged (typical when a board has been programmed over ISP) — reflash it with
-   *Tools → Burn Bootloader* using an ISP programmer or a second Arduino.
+3. The Caterina bootloader is missing or damaged (typical when a board has been
+   programmed over ISP) — reflash it with *Tools → Burn Bootloader* using an ISP
+   programmer or a second Arduino.
 
 ---
 
@@ -438,7 +466,8 @@ The TTP223 is the fast path for the durations you actually use. Each tap loads t
    full set duration has genuinely elapsed and there is no silent final minute:
    - the **4 timer digits blink** `00.00` (500 / 500 ms),
    - **LED 5 blinks** — and only LED 5,
-   - the buzzer beeps **500 ms on / 500 ms off**,
+   - the buzzer beeps **500 ms on / 500 ms off** (`BEEP_MS`) — the *countdown* rhythm;
+     a time alarm sounds different, see §5b,
    - all of it continues for **1 minute**.
 5. After that minute the alarm stops on its own, the timer resets to `00.00` and
    stops blinking.
@@ -466,8 +495,25 @@ once per day per alarm:
 
 - the right 4 digits blink **`AL-1`** / **`AL-2`** / **`AL-3`**,
 - the matching **LED 6 / 7 / 8 blinks**,
-- the buzzer beeps like the countdown alarm, for **1 minute**, and any key or a tap
-  silences it.
+- the buzzer plays the **accelerating** rhythm below, for **1 minute**, and any key or a
+  tap silences it.
+
+**The two alarms sound different.** The countdown keeps the plain 500 / 500 ms beep; a
+time alarm winds up instead, so you can tell from the next room which one is going off:
+
+```
+ 300 ms on / 300 off · 200/200 · 120/120 · 80 on · 800 ms silence · repeat
+ ███████   ███████   █████   █████   ███  ███  ██
+```
+
+That is `TIME_BEEP` in the sketch — a looped list of on/off slices in ms, even entries
+being "buzzer on". Change the rhythm by editing that one array; nothing else knows about
+it. Both patterns are anchored to the instant their alarm started, so each always begins
+on a beep rather than part-way through a slice.
+
+Rhythm is the only thing available here: the buzzer is an **active** module with a single
+fixed pitch, so a pattern cannot use tone to distinguish itself the way the key click's
+3200 Hz does on a passive one (§3c).
 
 Silencing a time alarm does **not** disarm it (it rings again tomorrow) and does not
 disturb a countdown that happens to be running.
@@ -478,6 +524,9 @@ disturb a countdown that happens to be running.
 |---|---|---|
 | Countdown + a time alarm at the same moment | blinking `00.00` — the countdown wins the display | LED 5 **and** the time alarm's LED blink |
 | Two or three time alarms set to the same minute | the **lowest** label, e.g. `AL-1` | every matching LED blinks |
+
+There is only one buzzer, so it follows the same priority as the digits: the countdown's
+beep wins while it rings, and several time alarms at once share the lowest one's rhythm.
 
 So the digits always show the highest-priority event while the LEDs still tell you
 everything that is ringing. One key press silences all of them at once.
@@ -527,7 +576,8 @@ At the top of the sketch:
 |---|---|---|
 | `TIMER_LEAD_SEC` | `59` | extra seconds added to every preset / set value |
 | `ALARM_LEN_MS` | `60000` | how long the alarm rings |
-| `BEEP_MS` | `500` | alarm buzzer on/off period |
+| `BEEP_MS` | `500` | **countdown** alarm buzzer on/off period |
+| `TIME_BEEP` | `300,300,200,200,120,120,80,800` | **time** alarm rhythm: on/off slices in ms, looped |
 | `CLICK_MS` | `30` | key-down click length, `0` = no click |
 | `CLICK_HZ` | `3200` | key-down click pitch (passive buzzer only) |
 | `BLINK_MS` | `500` | digit blink half-period |

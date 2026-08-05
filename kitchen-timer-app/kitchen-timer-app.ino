@@ -46,7 +46,15 @@ const unsigned long DEBUG_BAUD = 115200;
 // the display rolls 00.01 -> 00.00, i.e. "0:03" really is 3 whole minutes.
 const unsigned long TIMER_LEAD_SEC = 59;
 const unsigned long ALARM_LEN_MS    = 60000UL; // alarm rings for 1 minute
-const unsigned long BEEP_MS         = 500;     // 500 ms on / 500 ms off
+const unsigned long BEEP_MS         = 500;     // countdown alarm: 500 ms on / 500 ms off
+
+// Time-of-day alarms get their own rhythm so they never sound like the countdown.
+// On/off slices in ms, looped from the moment the alarm starts; even entries are
+// "buzzer on", odd ones are silence. This one accelerates - 300, 200, 120, 80 ms with
+// shrinking gaps - then takes a breath and winds up again.
+// The buzzer is an active module (one fixed pitch), so rhythm is all there is to vary.
+const unsigned int TIME_BEEP[] = { 300,300, 200,200, 120,120, 80,800 };
+const byte TIME_BEEP_SLICES = sizeof(TIME_BEEP) / sizeof(TIME_BEEP[0]);
 const unsigned long BLINK_MS        = 500;     // blink half-period
 const unsigned long DEBOUNCE_MS     = 25;
 const unsigned long HOLD_MS         = 1000;    // SET hold in normal mode = pause
@@ -409,6 +417,20 @@ void buzzerSet(bool on, unsigned int hz) {
 #endif
 }
 
+// Where in the time-alarm rhythm we are, `elapsed` ms after it started ringing.
+// Stateless: walk the slices, wrapping at the end of the pattern.
+bool timeBeepOn(unsigned long elapsed) {
+  unsigned long cycle = 0;
+  for (byte i = 0; i < TIME_BEEP_SLICES; i++) cycle += TIME_BEEP[i];
+  if (cycle == 0) return false;
+  unsigned long t = elapsed % cycle;
+  for (byte i = 0; i < TIME_BEEP_SLICES; i++) {
+    if (t < TIME_BEEP[i]) return (i % 2) == 0;    // even slice = buzzer on
+    t -= TIME_BEEP[i];
+  }
+  return false;
+}
+
 // One tiny chirp on key-down. Non-blocking: updateClick() ends it CLICK_MS later,
 // so holding a key for 2 s still only makes a 30 ms sound.
 void clickBeep() {
@@ -602,8 +624,15 @@ void updateAlarm() {
     if (buzzerOn && !clickActive) buzzerSet(false, BUZZER_HZ);
     return;
   }
-  // one shared beep pattern however many alarms are sounding, in step with the blink
-  buzzerSet(((now / BEEP_MS) % 2) == 0, BUZZER_HZ);
+  // The two kinds of alarm sound different. Both patterns are anchored to the moment
+  // that alarm started, so each one always begins on a beep rather than mid-slice.
+  // The countdown outranks a time alarm on the buzzer exactly as it does on the digits.
+  if (timerAlarm) {
+    buzzerSet((((now - timerAlarmStart) / BEEP_MS) % 2) == 0, BUZZER_HZ);
+  } else {
+    // several time alarms at once share the lowest one's rhythm, like its label
+    buzzerSet(timeBeepOn(now - tAlarmStart[lowestRinging()]), BUZZER_HZ);
+  }
 }
 
 // ================================================================== actions
