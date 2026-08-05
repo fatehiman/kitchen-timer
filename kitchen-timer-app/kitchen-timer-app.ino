@@ -83,9 +83,12 @@ const unsigned int PRESET_MAX_MIN = 99 * 60 + 59;   // 99:59 expressed in minute
 
 // ------------------------------------------------------------------ touch pad
 // One tap loads the next duration in this ring, in minutes. 0 = clear the timer,
-// and the ring then starts over at 3 min. Every value gets TIMER_LEAD_SEC on top,
-// exactly like a preset key, so "3" really is 3 whole minutes.
-const unsigned int TOUCH_SEQ[] = { 3, 5, 7, 10, 15, 30, 45, 60, 90, 120, 150, 180, 0 };
+// and the ring then starts over at the first slot. Every value gets TIMER_LEAD_SEC
+// on top, exactly like a preset key, so "5" really is 5 whole minutes.
+// The first slot is the one exception to the whole-minutes rule: it is taken from
+// TOUCH_SEQ0_SEC instead, so the array entry below is only a non-zero placeholder.
+const unsigned int TOUCH_SEQ[] = { 2, 5, 7, 10, 15, 30, 45, 60, 90, 120, 150, 180, 0 };
+const unsigned long TOUCH_SEQ0_SEC = 2UL * 60UL + 20UL;   // 0:02:20
 const byte TOUCH_SEQ_N = sizeof(TOUCH_SEQ) / sizeof(TOUCH_SEQ[0]);
 byte touchIdx = 0;                 // where the next tap picks up
 
@@ -453,8 +456,9 @@ void alarmBegin() {
 // one tap = load the next duration in the ring and start it
 void touchTap() {
   byte idx = touchIdx;
-  unsigned int mins = TOUCH_SEQ[idx];
-  if (mins > 0) timerStart((unsigned long)mins * 60UL + TIMER_LEAD_SEC);
+  unsigned long secs = (idx == 0) ? TOUCH_SEQ0_SEC
+                                  : (unsigned long)TOUCH_SEQ[idx] * 60UL;
+  if (secs > 0) timerStart(secs + TIMER_LEAD_SEC);
   else          timerStopAndClear();
   touchIdx = (byte)((idx + 1) % TOUCH_SEQ_N);   // after the call, which resets it
 }
@@ -841,7 +845,9 @@ void onTouchDown() {
   clickBeep();
   if (mode != MODE_NORMAL) return;       // the tap ring only makes sense in normal mode
 #if DEBUG_SERIAL
-  Serial.print(F("[K] TOUCH ")); Serial.print(TOUCH_SEQ[touchIdx]); Serial.println(F(" min"));
+  Serial.print(F("[K] TOUCH "));
+  if (touchIdx == 0) { Serial.print(TOUCH_SEQ0_SEC); Serial.println(F(" sec")); }
+  else               { Serial.print(TOUCH_SEQ[touchIdx]); Serial.println(F(" min")); }
 #endif
   touchTap();
 }

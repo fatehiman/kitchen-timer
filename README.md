@@ -128,7 +128,7 @@ pin works.
 4. Open [kitchen-timer-app/kitchen-timer-app.ino](kitchen-timer-app/kitchen-timer-app.ino)
    and upload.
 
-Verified build for `arduino:avr:leonardo`: **15 824 bytes flash (55 %)**,
+Verified build for `arduino:avr:leonardo`: **15 880 bytes flash (55 %)**,
 **921 bytes RAM (35 %)**.
 
 The whole sketch is non-blocking (`millis()`-based, no `delay()`), so buttons stay
@@ -373,17 +373,23 @@ The TTP223 is the fast path for the durations you actually use. Each tap loads t
 **next** value in a fixed ring and starts the countdown immediately:
 
 ```
-3 → 5 → 7 → 10 → 15 → 30 → 45 → 1:00 → 1:30 → 2:00 → 2:30 → 3:00 → clear → (back to 3)
+2:20 → 5 → 7 → 10 → 15 → 30 → 45 → 1:00 → 1:30 → 2:00 → 2:30 → 3:00 → clear → (back to 2:20)
 ```
 
-(minutes; the last four are `HH:MM`). So three taps in a row give you 7 minutes, and
-you can keep tapping past `3:00` to wipe the timer and start the ring over.
+(minutes, except the first; the last four are `HH:MM`). So three taps in a row give you
+7 minutes, and you can keep tapping past `3:00` to wipe the timer and start the ring over.
 
-- Every value carries the same hidden `+59 s` as a preset key (§3b), so a tap of `3`
-  is 3 whole minutes to the buzzer.
+- **The first slot is the one duration not expressed in whole minutes**: it is
+  `TOUCH_SEQ0_SEC` = `2 min 20 s`. `TOUCH_SEQ[0]` is then only a non-zero placeholder
+  (a `0` there would mean "clear"), and `touchTap()` substitutes the seconds value for
+  index 0. Because the display only has `HH.MM`, a `2:20` countdown *shows* `00.03` at
+  the start (it holds 2 min 20 s + the hidden 59 s), then `00.02`, `00.01`, and the
+  buzzer lands exactly 2 min 20 s after the tap.
+- Every value carries the same hidden `+59 s` as a preset key (§3b), so a tap of `5`
+  is 5 whole minutes to the buzzer.
 - The ring is **not** sticky across other actions: pressing a preset key, editing in
   *timer set*, clearing with a `SET` hold, or the alarm firing all reset the position,
-  so the next tap after any of those is always `3` again.
+  so the next tap after any of those is always `2:20` again.
 - The pad is ignored inside the set modes.
 - **While anything is ringing, a tap silences it** and does nothing else — it will not
   also start a new countdown.
@@ -529,7 +535,8 @@ At the top of the sketch:
 | `HOLD_LONG_MS` | `2000` | hold to reprogram a key / cancel a set mode |
 | `SET_IDLE_MS` | `60000` | no keypress for this long in a set mode = auto-cancel |
 | `PRESET_DEFAULT` | `120,60,30,15,10,7,3` | factory presets in minutes for S2…S8 |
-| `TOUCH_SEQ` | `3,5,7,10,15,30,45,60,90,120,150,180,0` | the touch-pad tap ring, in minutes; `0` = clear |
+| `TOUCH_SEQ` | `2,5,7,10,15,30,45,60,90,120,150,180,0` | the touch-pad tap ring, in minutes; `0` = clear; slot 0 is overridden by `TOUCH_SEQ0_SEC` |
+| `TOUCH_SEQ0_SEC` | `140` | first tap-ring slot, in **seconds** (`0:02:20`) |
 | `REPEAT_DELAY_MS` / `REPEAT_RATE_MS` | `600` / `130` | key auto-repeat |
 | `DISPLAY_BRIGHTNESS` | `PULSE10_16` | brightness, `PULSE1_16` (dim) … `PULSE14_16` |
 | `BUZZER_USE_TONE` | `1` | 1 = passive buzzer via `tone()`, 0 = active buzzer |
